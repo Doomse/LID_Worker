@@ -8,7 +8,11 @@ class VoxforgeDataset(data.Dataset):
     def __init__(self, csv_file: str):
         super().__init__()
         self.data_index = pandas.read_csv(csv_file)
-        self.lang_index = { lang: i for i, lang in enumerate(self.data_index.columns[-1].split()) }      
+        langs_str = self.data_index.columns[-1]
+        self.langs = sorted(langs_str.split())
+        counts = self.data_index[langs_str].value_counts()
+        self.weights = [ counts.max()/counts[l] for l in self.langs ]
+        self.lang_index = { lang: i for i, lang in enumerate(self.langs) }      
 
     def __len__(self):
         return len(self.data_index.index)
