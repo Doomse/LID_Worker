@@ -19,7 +19,7 @@ class VoxforgeDataset(data.Dataset):
 
     def __getitem__(self, index: int):
         row = self.data_index.iloc[index]
-        audio, sr = torchaudio.load(row[-2])
+        audio, sr = torchaudio.load(row[1])
         assert sr == 8000 # Resampling done by organize_data script
         return audio, self.lang_index[row[-1]]
 

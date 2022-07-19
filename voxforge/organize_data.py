@@ -36,6 +36,8 @@ def extract_tar_archives(dry_run=False):
                 continue
             if lang_dir.name == 'logs': # Skip logs
                 continue
+            if lang_dir.name.startswith('set'): # Skip existing sets
+                continue
 
             filenames[lang_dir] = []
             for file in lang_dir.rglob('*.tgz'):
@@ -45,7 +47,7 @@ def extract_tar_archives(dry_run=False):
 
     return filenames
 
-def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], shuffle=False):
+def create_full_dataset(filenames: dict[pathlib.Path,list[pathlib.Path]], shuffle=False):
     logfile = BASE_DIR/'logs'
     logfile.mkdir(exist_ok=True)
     logfile /= datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
@@ -53,16 +55,25 @@ def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], 
 
     with logfile.open('w') as log:
         try:
-            train_entries = []
-            test_entries = []
+            entries = []
             langs = []
+
+            for i in range(1000):
+                set_dir = BASE_DIR/f"set_{i:03d}"
+                if not set_dir.exists():
+                    break
+            set_dir.mkdir(parents=True, exist_ok=True)
+
             for lang_dir, audio_dirlist in filenames.items():
-                split_counter = 1
-                for audio_dir in audio_dirlist:
+
+                for audio_dir in sorted(audio_dirlist, key=lambda x: x.name):
                     try:
-                        target_path = lang_dir/audio_dir.parent.name
+                        target_path = set_dir/lang_dir.name/audio_dir.parent.name
                         target_name = audio_dir.name
 
+                        speaker, rec_date, *_ = target_name.split('-')
+
+                        #Locate audio dir
                         new_audio_dir = None
                         for dirname in audio_dir.iterdir():
                             if not dirname.is_dir(): # Skip files
@@ -92,6 +103,7 @@ def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], 
                         if shuffle:
                             random.shuffle(dir_list)
                         
+                        #Concat and splice audio files
                         for file in dir_list:
                             audio, sample_rate = torchaudio.load(file)
                             audio = audio.to(DEVICE)
@@ -123,12 +135,8 @@ def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], 
                                 waveform = waveform.cpu()
                                 torchaudio.save(target, waveform, TARGET_SAMPLE_RATE)
 
-                                if math.remainder(split_counter, 5):
-                                    train_entries.append( ( str(target), lang_dir.name, ) )
-                                    split_counter += 1
-                                else:
-                                    test_entries.append( ( str(target), lang_dir.name, ) )
-                                    split_counter = 1
+
+                                entries.append( ( str(target), speaker, lang_dir.name, ) )
 
 
                                 audio_frames = audio_frames - suf_frames
@@ -145,11 +153,9 @@ def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], 
                 langs.append(lang_dir.name)
 
         finally:
-            columns = ['path', ' '.join(langs)]
-            train_frame = pandas.DataFrame(data=train_entries, columns=columns)
-            train_frame.to_csv(BASE_DIR/'train_data.csv')
-            test_frame = pandas.DataFrame(data=test_entries, columns=columns)
-            test_frame.to_csv(BASE_DIR/'test_data.csv')
+            columns = ['path', 'speaker', ' '.join(langs)]
+            train_frame = pandas.DataFrame(data=entries, columns=columns)
+            train_frame.to_csv(set_dir/'full_data.csv')
 
         
 
@@ -157,4 +163,4 @@ def create_training_test_data(filenames: dict[pathlib.Path,list[pathlib.Path]], 
 
 if __name__ == '__main__':
     filenames = extract_tar_archives()
-    create_training_test_data(filenames)
+    create_full_dataset(filenames)
