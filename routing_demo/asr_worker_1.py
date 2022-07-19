@@ -9,7 +9,7 @@ W_NAME = "LID_Worker".encode('utf-8')
 IN_FINGERPRINT = 'yy'.encode('utf-8')
 IN_TYPE = 'audio'.encode('utf-8')
 OUT_FINGERPRINT = 'yy'.encode('utf-8')
-OUT_TYPE = 'unseg-text'.encode('utf-8')
+OUT_TYPE = 'text'.encode('utf-8')
 
 count = 0
 
@@ -36,6 +36,7 @@ def data_callback(i, sampleA):
     global count
     m_cloud_w.send_packet_result_async(count, count+i, text, len(text))
     count += i
+    print('DEBUG', 'count:', type(count), count)
     
 
 

@@ -1,47 +1,45 @@
-import time, threading, datetime, sys, numpy as np
+import logging, time, signal, numpy as np
+from pythonrecordingclient import session
 import MCloud, MCloudPacketRCV, MCloudPacketSND #type: ignore
 
+#logging.getLogger('prc').setLevel(logging.DEBUG)
+#logging.getLogger('prc').addHandler(
+#    logging.StreamHandler().setLevel(logging.DEBUG)
+#)
 
-HOST = "i13srv53.ira.uka.de".encode('utf-8')
+HOST = "i13srv53.ira.uka.de"
 W_PORT = 60019
 C_PORT = 4443
 
-W_NAME = "LID_Router_Worker".encode('utf-8')
-C_NAME = "LID_Router_Client".encode('utf-8')
-W_IN_FINGERPRINT = 'xx'.encode('utf-8')
-C_IN_FINGERPRINT = ('yy'.encode('utf-8'), 'zz'.encode('utf-8'))
-IN_TYPE = 'audio'.encode('utf-8')
-W_OUT_FINGERPRINT = 'xx'.encode('utf-8')
-C_OUT_FINGERPRINT = ('yy'.encode('utf-8'), 'zz'.encode('utf-8'))
-OUT_TYPE = 'unseg-text'.encode('utf-8')
+W_NAME = "LID_Router_Worker"
+C_NAME = "LID_Router_Client"
+W_IN_FINGERPRINT = 'xx'
+C_IN_FINGERPRINT = ('yy', 'zz')
+IN_TYPE = 'audio'
+W_OUT_FINGERPRINT = 'xx'
+C_OUT_FINGERPRINT = ('yy', 'zz')
+OUT_TYPE = 'unseg-text'
 
-C_STREAM_IDS = ('1234'.encode('utf-8'), '5678'.encode('utf-8'))
+C_STREAM_IDS = ('1234', '5678')
 
 SMAPLE_RATE = 16000
 
 
-clients = []
+clients: list[session.Session] = []
 
 switch_count = 1
 switch_cap = 10
 switch_index = 0
 
 
-#TODO replace this
-def pass_on_client_responses(client):
-    running = True
-    while running:
-        packet = MCloudPacketRCV.MCloudPacketRCV(client)
 
-        print(f"receive worker packet {packet}", flush=True)
+def stop_gracefully(signal, frame):
+    print("Stopping clients")
+    for cl in clients:
+        cl.stop()
+    print("Stopped clients")
 
-        p_type = packet.packet_type()
-        if p_type == 3:
-            client.process_data_async(packet, m_cloud_w)
-        else:
-            running = False
-
-            
+signal.signal(signal.SIGINT, stop_gracefully)
 
 
 
@@ -61,26 +59,34 @@ def processing_break_callback():
 
 def init_callback():
     print("INFO in processing init callback ")
-    running = True
     for in_fp, out_fp, stream_id in zip(C_IN_FINGERPRINT, C_OUT_FINGERPRINT, C_STREAM_IDS):
-        m_cloud_c = MCloud.MCloudWrap(C_NAME, 2) # Mode 2: Client
-        m_cloud_c.add_flow_description('en'.encode('utf-8'), 'lid'.encode('utf-8'), 'desc'.encode('utf-8'))
-        m_cloud_c.set_callback("init", init_callback)
-        m_cloud_c.set_data_callback("client")
-        m_cloud_c.set_callback("finalize", processing_finalize_callback)
-        m_cloud_c.set_callback("error", processing_error_callback)
-        m_cloud_c.set_callback("break", processing_break_callback)
+        cl = session.Session(
+            name=C_NAME,
+            input_fingerprint=in_fp,
+            input_types=[IN_TYPE],
+            output_fingerprint=[out_fp],
+        )
+        cl.start(HOST, C_PORT)
 
-        m_cloud_c.connect(HOST, C_PORT)
-
-        m_cloud_c.announce_output_stream(IN_TYPE, in_fp, stream_id, ''.encode('utf-8'))
-        m_cloud_c.request_input_stream(OUT_TYPE, out_fp, stream_id)
-
-        cl_thread = threading.Thread(target=pass_on_client_responses, args=(m_cloud_c, ) )
-
-        clients.append( (m_cloud_c, in_fp, out_fp, stream_id, cl_thread) )
+        clients.append(cl)
 
         print(f"Successfully created client {in_fp}")
+
+    for cl in clients:
+        while not cl.ready:
+            time.sleep(0.1)
+        print(f"Client {cl.input_fingerprint} is ready")
+
+
+
+@session.on_receive
+def data_return_callback(cl, data):
+    text = data.find('text').text
+    start = data.get('start')
+    stop = data.get('stop')
+    creator = data.get('creator')
+    fingerprint = data.get('fingerprint')
+    print(f"Text: {text}\nStart: {start}\nStop: {stop}\nCreator: {creator}\nFingerprint: {fingerprint}")
 
 
 
@@ -90,22 +96,11 @@ def data_callback(i, sampleA):
     sample = np.asarray(sampleA)
     print('DEBUG', 'sample:', type(sample), sample.shape, sample.min(), sample.max() )
 
-    now = datetime.datetime.now()
-    end_str = now.strftime('%d/%m/%y-%H:%M:%S')
-    td = datetime.timedelta(microseconds=i*1000000//16000 ) # num_frames/frames_per_second * microseconds_per_second
-    start_str = (now-td).strftime('%d/%m/%y-%H:%M:%S')
-    mcloud_cl, in_fp, out_fp, stream_id, cl_thread = get_client()
-    snd_packet = MCloudPacketSND.MCloudPacketSND(mcloud_cl, 
-        start_str.encode('utf-8'), 
-        end_str.encode('utf-8'), 
-        in_fp, 
-        ''.encode('utf-8'), 
-        b''.join([ s.to_bytes(2, sys.byteorder, signed=True) for s in sampleA]), 
-        i, 
-        0, 
-    )
-    mcloud_cl.send_packet(snd_packet) # Async sending doesn't work
-    print('DEBUG', f"packet sent to client {in_fp}")
+    cl = get_client()
+
+    cl.send_audio(sample.data)
+
+    print('DEBUG', f"packet sent to client {cl.input_fingerprint}")
 #[251, 260, 290, 298, 306, 315, 284, 294, 291, 371] byteorder='little'
 
 
@@ -126,16 +121,16 @@ def get_client():
     
 
 
-m_cloud_w = MCloud.MCloudWrap(W_NAME, 1) # Mode 1: Worker
+m_cloud_w = MCloud.MCloudWrap(W_NAME.encode('utf-8'), 1) # Mode 1: Worker
 
-m_cloud_w.add_service(W_NAME, 'lid'.encode('utf-8'), W_IN_FINGERPRINT, IN_TYPE, W_OUT_FINGERPRINT, OUT_TYPE, ''.encode('utf-8'))
+m_cloud_w.add_service(W_NAME.encode('utf-8'), 'lid'.encode('utf-8'), W_IN_FINGERPRINT.encode('utf-8'), IN_TYPE.encode('utf-8'), W_OUT_FINGERPRINT.encode('utf-8'), OUT_TYPE.encode('utf-8'), ''.encode('utf-8'))
 m_cloud_w.set_callback("init", init_callback)
 m_cloud_w.set_data_callback("worker")
 m_cloud_w.set_callback("finalize", processing_finalize_callback)
 m_cloud_w.set_callback("error", processing_error_callback)
 m_cloud_w.set_callback("break", processing_break_callback)
 
-m_cloud_w.connect(HOST, W_PORT)
+m_cloud_w.connect(HOST.encode('utf-8'), W_PORT)
 
 
 
@@ -159,8 +154,8 @@ while True:
             """
             m_cloud_w.wait_for_finish(0, "processing")
 
-            for cl, _, _, _, _ in clients:
-                cl.send_flush()
+            for cl in clients:
+                cl.stop()
 
             print("WORKER INFO received flush message ==> waiting for packages.")
             MCloud.mcloudpacketdenit(packet)
@@ -168,9 +163,8 @@ while True:
         elif packet.packet_type() == 4:  # MCloudDone
             m_cloud_w.wait_for_finish(1, "processing")
 
-            for cl, _, _, _, _ in clients:
-                cl.send_done()
-
+            for cl in clients:
+                cl.stop()
             
             m_cloud_w.stop_processing("processing")
             MCloud.mcloudpacketdenit(packet)
@@ -182,8 +176,8 @@ while True:
             m_cloud_w.wait_for_finish(1, "processing")
 
             #TODO handle error for clients
-            for cl, _, _, _, _ in clients:
-                cl.send_done()
+            for cl in clients:
+                cl.stop()
 
             
             m_cloud_w.stop_processing("processing")
@@ -194,8 +188,8 @@ while True:
             m_cloud_w.stop_processing("processing")
 
             #TODO handle reset for clients
-            for cl, _, _, _, _ in clients:
-                cl.send_done()
+            for cl in clients:
+                cl.stop()
 
             print("CLIENT INFO received RESET message >>> waiting for clients.")
             MCloud.mcloudpacketdenit(packet)
@@ -203,8 +197,8 @@ while True:
         else:
             print("CLIENT ERROR unknown packet type {!s}".format(packet.packet_type()))
 
-            for cl, _, _, _, _ in clients:
-                cl.send_done()
+            for cl in clients:
+                cl.stop()
 
             MCloud.mcloudpacketdenit(packet)
             proceed = False
