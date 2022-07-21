@@ -1,4 +1,4 @@
-import time, numpy as np
+import signal, time, numpy as np
 import MCloud, MCloudPacketRCV #type: ignore
 
 
@@ -14,6 +14,12 @@ OUT_TYPE = 'text'.encode('utf-8')
 count = 0
 
 
+def stop_gracefully(signal, frame):
+    exit(0)
+
+signal.signal(signal.SIGINT, stop_gracefully)
+
+
 def processing_finalize_callback():
     print("INFO in processing finalize callback")
 
@@ -24,6 +30,8 @@ def processing_break_callback():
     print("INFO in processing break callback")
 
 def init_callback():
+    global count
+    count = 0
     print("INFO in processing init callback ")
 
 def data_callback(i, sampleA):

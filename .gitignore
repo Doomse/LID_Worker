@@ -3,5 +3,7 @@ logs/
 models/
 __pycache__/
 
+*.log
+
 voxforge/*/
 voxforge/*.csv

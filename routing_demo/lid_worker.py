@@ -1,11 +1,14 @@
 import logging, time, signal, numpy as np
+import xml.etree.ElementTree as ET
+from urllib.parse import unquote
 from pythonrecordingclient import session
 import MCloud, MCloudPacketRCV, MCloudPacketSND #type: ignore
 
-#logging.getLogger('prc').setLevel(logging.DEBUG)
-#logging.getLogger('prc').addHandler(
-#    logging.StreamHandler().setLevel(logging.DEBUG)
-#)
+prc_logger = logging.getLogger('prc')
+prc_logger.setLevel(logging.DEBUG)
+prc_logger.addHandler(
+    logging.FileHandler('router.log', mode='a+')
+)
 
 HOST = "i13srv53.ira.uka.de"
 W_PORT = 60019
@@ -18,7 +21,7 @@ C_IN_FINGERPRINT = ('yy', 'zz')
 IN_TYPE = 'audio'
 W_OUT_FINGERPRINT = 'xx'
 C_OUT_FINGERPRINT = ('yy', 'zz')
-OUT_TYPE = 'unseg-text'
+OUT_TYPE = 'text'
 
 C_STREAM_IDS = ('1234', '5678')
 
@@ -27,17 +30,24 @@ SMAPLE_RATE = 16000
 
 clients: list[session.Session] = []
 
+def stop_clients():
+    while clients:
+        cl = clients.pop()
+        print(f"Stopping client {cl.input_fingerprint}")
+        cl.stop()
+        print(f"Stopped client {cl.input_fingerprint}")
+
+
 switch_count = 1
 switch_cap = 10
 switch_index = 0
 
 
-
 def stop_gracefully(signal, frame):
     print("Stopping clients")
-    for cl in clients:
-        cl.stop()
+    stop_clients()
     print("Stopped clients")
+    exit(0)
 
 signal.signal(signal.SIGINT, stop_gracefully)
 
@@ -80,20 +90,26 @@ def init_callback():
 
 
 @session.on_receive
-def data_return_callback(cl, data):
-    text = data.find('text').text
+def data_return_callback(cl, data: ET.Element):
+    prc_logger.debug(f" <<< {ET.tostring(data, encoding='unicode', method='xml')}")
+    text = unquote(data.find('text').text)
     start = data.get('start')
+    start_int = int( data.get('startoffset') )
     stop = data.get('stop')
+    stop_int = int( data.get('stopoffset') )
     creator = data.get('creator')
     fingerprint = data.get('fingerprint')
     print(f"Text: {text}\nStart: {start}\nStop: {stop}\nCreator: {creator}\nFingerprint: {fingerprint}")
+    m_cloud_w.send_packet_result_async(start_int, stop_int, [text], 1)
+
+
 
 
 
 def data_callback(i, sampleA):
     print('DEBUG', 'i:', type(i), i)
     print('DEBUG', 'sampleA:', type(sampleA), len(sampleA) )
-    sample = np.asarray(sampleA)
+    sample = np.array(sampleA, dtype=np.int16)
     print('DEBUG', 'sample:', type(sample), sample.shape, sample.min(), sample.max() )
 
     cl = get_client()
@@ -143,6 +159,10 @@ while True:
     while proceed:
         packet = MCloudPacketRCV.MCloudPacketRCV(m_cloud_w)
 
+        with open('packets.log', 'ba+') as f:
+            f.write(packet.xml_string)
+            f.write(b'\n\n')
+
         p_type = packet.packet_type()
         if packet.packet_type() == 3:
             m_cloud_w.process_data_async(packet, data_callback)
@@ -155,7 +175,9 @@ while True:
             m_cloud_w.wait_for_finish(0, "processing")
 
             for cl in clients:
-                cl.stop()
+                cl.send_flush()
+
+            m_cloud_w.send_flush()
 
             print("WORKER INFO received flush message ==> waiting for packages.")
             MCloud.mcloudpacketdenit(packet)
@@ -163,8 +185,7 @@ while True:
         elif packet.packet_type() == 4:  # MCloudDone
             m_cloud_w.wait_for_finish(1, "processing")
 
-            for cl in clients:
-                cl.stop()
+            stop_clients()
             
             m_cloud_w.stop_processing("processing")
             MCloud.mcloudpacketdenit(packet)
@@ -176,9 +197,7 @@ while True:
             m_cloud_w.wait_for_finish(1, "processing")
 
             #TODO handle error for clients
-            for cl in clients:
-                cl.stop()
-
+            stop_clients()
             
             m_cloud_w.stop_processing("processing")
             MCloud.mcloudpacketdenit(packet)
@@ -188,8 +207,8 @@ while True:
             m_cloud_w.stop_processing("processing")
 
             #TODO handle reset for clients
-            for cl in clients:
-                cl.stop()
+            stop_clients()
+            raise NotImplemented
 
             print("CLIENT INFO received RESET message >>> waiting for clients.")
             MCloud.mcloudpacketdenit(packet)
@@ -197,8 +216,7 @@ while True:
         else:
             print("CLIENT ERROR unknown packet type {!s}".format(packet.packet_type()))
 
-            for cl in clients:
-                cl.stop()
+            stop_clients()
 
             MCloud.mcloudpacketdenit(packet)
             proceed = False
