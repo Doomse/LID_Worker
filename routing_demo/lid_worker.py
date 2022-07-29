@@ -1,13 +1,17 @@
-import logging, time, signal, numpy as np
+import logging, pathlib, time, signal, numpy as np
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 from pythonrecordingclient import session
 import MCloud, MCloudPacketRCV, MCloudPacketSND #type: ignore
 
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+
+
 prc_logger = logging.getLogger('prc')
 prc_logger.setLevel(logging.DEBUG)
 prc_logger.addHandler(
-    logging.FileHandler('router.log', mode='a+')
+    logging.FileHandler(BASE_DIR/'router.log', mode='a+')
 )
 
 HOST = "i13srv53.ira.uka.de"

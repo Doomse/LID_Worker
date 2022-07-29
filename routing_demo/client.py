@@ -1,13 +1,16 @@
-import logging, signal, time, re, numpy as np
+import logging, signal, time, pathlib, re, numpy as np
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
 from pythonrecordingclient import session
 
 
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+
+
 prc_logger = logging.getLogger('prc')
 prc_logger.setLevel(logging.DEBUG)
 prc_logger.addHandler(
-    logging.FileHandler('client.log', mode='a+')
+    logging.FileHandler(BASE_DIR/'client.log', mode='a+')
 )
 
 
