@@ -1,24 +1,10 @@
 import torch, torchaudio
-import math, random
+import random
 import pandas
 import pathlib, subprocess
 import datetime, traceback
+import argparse
 
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-
-ONE_IN_X = 5 #One in x files will be assigned to the test set
-
-TARGET_SAMPLE_RATE = 8000
-TARGET_LENGTH = 10
-
-GPU_ID = 4
-
-if torch.cuda.is_available():
-    DEVICE = torch.device('cuda', GPU_ID)
-    print('use cuda')
-else:
-    DEVICE = torch.device('cpu')
 
 
 def extract_tar_archives(dry_run=False):
@@ -124,11 +110,13 @@ def create_full_dataset(filenames: dict[pathlib.Path,list[pathlib.Path]], shuffl
                                 assert waveform.shape[1] == TARGET_LENGTH*sample_rate
                                 waveform = waveform.to(DEVICE) #TODO Maybe not necessary
                                 waveform = torch.mean(waveform, dim=0, keepdim=True) # Downmix to mono according to https://github.com/pytorch/audio/issues/363
-                                if sample_rate != prev_sample_rate:
-                                    resampler = torchaudio.transforms.Resample(sample_rate, TARGET_SAMPLE_RATE).to(DEVICE)
-                                    prev_sample_rate = sample_rate
-                                waveform = resampler(waveform)
-                                assert waveform.shape[1] == TARGET_LENGTH*TARGET_SAMPLE_RATE
+                                
+                                if TARGET_SAMPLE_RATE is not None:
+                                    if sample_rate != prev_sample_rate:
+                                        resampler = torchaudio.transforms.Resample(sample_rate, TARGET_SAMPLE_RATE).to(DEVICE)
+                                        prev_sample_rate = sample_rate
+                                    waveform = resampler(waveform)
+                                    assert waveform.shape[1] == TARGET_LENGTH*TARGET_SAMPLE_RATE
 
                                 target.parent.mkdir(parents=True, exist_ok=True)
                                 target.touch()
@@ -162,5 +150,22 @@ def create_full_dataset(filenames: dict[pathlib.Path,list[pathlib.Path]], shuffl
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Extracts the data from a given voxforge dataset and collects it in a csv archive")
+    parser.add_argument('--gpu', type=int, help="GPU id to use (if available)")
+    parser.add_argument('-r', '--samplerate', type=int, help="Target sample rate, leave blank for no resampling")
+    parser.add_argument('-l', '--length', type=int, default=10, help="Target length of segments in seconds. Defaults to 10")
+    args = parser.parse_args()
+
+    BASE_DIR = pathlib.Path(__file__).resolve().parent
+
+    TARGET_SAMPLE_RATE = args.samplerate
+    TARGET_LENGTH = args.length
+
+    if torch.cuda.is_available() and args.gpu:
+        DEVICE = torch.device('cuda', args.gpu)
+        print('use cuda')
+    else:
+        DEVICE = torch.device('cpu')
+
     filenames = extract_tar_archives()
     create_full_dataset(filenames)

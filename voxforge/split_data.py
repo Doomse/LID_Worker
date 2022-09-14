@@ -1,12 +1,12 @@
 import numpy as np
 import pandas as pd
-import pathlib
+import argparse, pathlib
 
 
 ONE_IN_X = 5
 
 
-def split_by_bin_packing(src_path):
+def split_by_bin_packing(src_path, trgt_langs):
     path = pathlib.Path(src_path).parent
 
     df = pd.read_csv(src_path, index_col=0)
@@ -15,7 +15,10 @@ def split_by_bin_packing(src_path):
     train_list = []
     test_list = []
 
-    for _, data in df.groupby(langs):
+    for name, data in df.groupby(langs):
+
+        if not name in trgt_langs:
+            continue
 
         #Retrieve speakers with the respective amount of recordings
         speakers : pd.Series
@@ -60,10 +63,21 @@ def split_by_bin_packing(src_path):
     train_df = pd.concat(train_list, ignore_index=True)
     test_df = pd.concat(test_list, ignore_index=True)
 
-    train_df.to_csv(path/'train_data.csv')
-    test_df.to_csv(path/'test_data.csv')
+    train_df.rename(columns={ train_df.columns[-1]: ' '.join(trgt_langs) })
+    test_df.rename(columns={ test_df.columns[-1]: ' '.join(trgt_langs) })
+
+    train_df.to_csv(path/f"train_{','.join(trgt_langs)}_data.csv")
+    test_df.to_csv(path/f"test_{','.join(trgt_langs)}_data.csv")
 
 
 
 if __name__ == '__main__':
-    split_by_bin_packing('/home/dhoefer/full_data.csv')
+    parser = argparse.ArgumentParser(description="Split a dataset into training and test data whilst selecting specific languages")
+    parser.add_argument('-l', '--lang', action="append",
+        help="The languages that should be included in the resulting dataset, given once per language")
+    parser.add_argument('-m', '--mag', default=5, type=int,
+        help="Specifies the magnitude/factor by which the training set is larger than the test set")
+    parser.add_argument('path')
+    args = parser.parse_args()
+    ONE_IN_X = args.mag
+    split_by_bin_packing(args.path, args.lang)

@@ -2,26 +2,12 @@ import torch
 from torch.utils import data
 from torch.cuda import amp
 import torch_models, torch_datasets
-import datetime, pathlib
-
-EPOCHS = 100
-BATCH_SIZE = 32
-LEARNING_RATE = 1e-3
-
-KERNEL_SIZE = 3
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-
-GPU_ID = 4
-
-if torch.cuda.is_available():
-    DEVICE = torch.device('cuda', GPU_ID)
-    print('use cuda')
-else:
-    DEVICE = torch.device('cpu')
+import argparse,datetime, pathlib
 
 
-def optimize(epochs, batch_size, learning_rate, kernel_size, train_ds_loc, test_ds_loc):
+
+
+def optimize(epochs, batch_size, learning_rate, kernel_size, dropout, train_ds_loc, test_ds_loc):
     logfile = BASE_DIR/'logs'
     logfile.mkdir(exist_ok=True)
     logfile /= datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
@@ -29,7 +15,7 @@ def optimize(epochs, batch_size, learning_rate, kernel_size, train_ds_loc, test_
 
     train_dl = data.DataLoader(torch_datasets.VoxforgeDataset(train_ds_loc), batch_size=batch_size, shuffle=True)
     test_dl = data.DataLoader(torch_datasets.VoxforgeDataset(test_ds_loc), batch_size=batch_size, shuffle=True)
-    model = torch_models.Orig1d(langs=len(train_dl.dataset.langs), kernel_size=kernel_size).to(DEVICE)
+    model = torch_models.Orig1d(langs=len(train_dl.dataset.langs), kernel_size=kernel_size, dropout=dropout).to(DEVICE)
     loss_fn = torch.nn.CrossEntropyLoss(weight=torch.Tensor(train_dl.dataset.weights)).to(DEVICE)
     optimizer = torch.optim.SGD(model.parameters(), learning_rate)
     scaler = amp.GradScaler()
@@ -38,12 +24,12 @@ def optimize(epochs, batch_size, learning_rate, kernel_size, train_ds_loc, test_
 
     modelfile = BASE_DIR/'models'
     modelfile.mkdir(exist_ok=True)
-    modelfile /= f"{','.join(train_dl.dataset.langs)}__{KERNEL_SIZE}__{LEARNING_RATE}____{datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}"
+    modelfile /= f"{','.join(train_dl.dataset.langs)}__{kernel_size}__{learning_rate}__{dropout}____{datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}"
     modelfile.touch()
 
     with logfile.open('w') as log:
 
-        log.write(f"Langs: {','.join(train_dl.dataset.langs)}\nKernel size: {KERNEL_SIZE}\nLearning rate: {LEARNING_RATE}\n\n\n")
+        log.write(f"Langs: {','.join(train_dl.dataset.langs)}\nKernel size: {kernel_size}\nDropout: {dropout}\nLearning rate: {learning_rate}\n\n\n")
 
         for ep in range(epochs):
             # Training loop
@@ -104,7 +90,23 @@ def optimize(epochs, batch_size, learning_rate, kernel_size, train_ds_loc, test_
 
 
 if __name__ == '__main__':
-    optimize(EPOCHS, BATCH_SIZE, LEARNING_RATE, KERNEL_SIZE, 
-        '/export/data1/data/dhoefer/voxforge/set_001/train_data.csv', 
-        '/export/data1/data/dhoefer/voxforge/set_001/test_data.csv', 
-    )
+    parser = argparse.ArgumentParser(description="Trains a model over the given datasets")
+    parser.add_argument('--gpu', type=int, help="GPU id to use (if available)")
+    parser.add_argument('-e', '--epochs', type=int, default=100, help="Amount of epochs to run, default 100")
+    parser.add_argument('-b', '--batchsize', type=int, default=32, help="Batch size to run, default 32")
+    parser.add_argument('-l', '--learningrate', type=float, default=1e-3, help="Learning rate for training, default 1e-3")
+    parser.add_argument('--trainingdata', help="The filesystem location of the training data")
+    parser.add_argument('--testdata', help="The filesystem location of the test data")
+    parser.add_argument('--kernelsize', type=int, default=3, help="Size of convolution and pooling kernels, default 3")
+    parser.add_argument('--dropout', type=float, default=0.1, help="Droopout used foor training, default 0.1")
+    args = parser.parse_args()
+
+    BASE_DIR = pathlib.Path(__file__).resolve().parent
+
+    if torch.cuda.is_available() and args.gpu:
+        DEVICE = torch.device('cuda', args.gpu)
+        print('use cuda')
+    else:
+        DEVICE = torch.device('cpu')
+
+    optimize(args.epochs, args.batchsize, args.learningrate, args.kernelsize, args.dropout, args.trainingdata, args.testdata)
