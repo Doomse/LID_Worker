@@ -2,44 +2,44 @@ import torch
 from torch import nn
 
 
-def get_1d_conv_net(kernel_size):
+def get_1d_conv_net(kernel_size, dropout):
     return nn.Sequential(
         nn.BatchNorm1d(1), #TODO Keep this?
         # No Block
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=1, out_channels=128, kernel_size=kernel_size, stride=3),
         nn.ReLU(),
         nn.BatchNorm1d(128),
 
         # Block 1
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=128, out_channels=128, kernel_size=kernel_size, stride=1),
         nn.ReLU(),
         nn.BatchNorm1d(128),
         nn.MaxPool1d(kernel_size=3, stride=3),
         #
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=128, out_channels=128, kernel_size=kernel_size, stride=1),
         nn.ReLU(),
         nn.BatchNorm1d(128),
         nn.MaxPool1d(kernel_size=3, stride=3),
 
         # No Block
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=128, out_channels=256, kernel_size=kernel_size, stride=1),
         nn.ReLU(),
         nn.BatchNorm1d(256),
         nn.MaxPool1d(kernel_size=3, stride=3),
 
         # Block 2
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=256, out_channels=256, kernel_size=kernel_size, stride=1),
         nn.ReLU(),
         nn.BatchNorm1d(256),
         nn.MaxPool1d(kernel_size=3, stride=3),
 
         # No Block
-        nn.Dropout(p=0.1),
+        nn.Dropout(p=dropout),
         nn.Conv1d(in_channels=256, out_channels=512, kernel_size=kernel_size, stride=1),
         nn.ReLU(),
         nn.BatchNorm1d(512),
@@ -49,9 +49,9 @@ def get_1d_conv_net(kernel_size):
 # For production code, an efficient execution of the conv and maxpool layers should be used, where only the elements dependant on new data are calculated (with padding on the left from memory)
 
 class Orig1d(nn.Module):
-    def __init__(self, langs: int, kernel_size: int, *args, **kwargs):
+    def __init__(self, langs: int, kernel_size: int, dropout: float = 0.1, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.conv_net = get_1d_conv_net(kernel_size)
+        self.conv_net = get_1d_conv_net(kernel_size, dropout)
         self.dense_net = nn.Sequential(
             nn.AdaptiveMaxPool1d(output_size=1),
             nn.Flatten(start_dim=-2, end_dim=-1), # Transforms data according to Linear's input requirements (batch, 512, 1) -> (batch, 512)
