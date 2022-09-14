@@ -21,10 +21,10 @@ C_PORT = 4443
 W_NAME = "LID_Router_Worker"
 C_NAME = "LID_Router_Client"
 W_IN_FINGERPRINT = 'xx'
-C_IN_FINGERPRINT = ('yy', 'zz')
+C_IN_FINGERPRINT = ('de', 'en')
 IN_TYPE = 'audio'
 W_OUT_FINGERPRINT = 'xx'
-C_OUT_FINGERPRINT = ('yy', 'zz')
+C_OUT_FINGERPRINT = ('de', 'en')
 OUT_TYPE = 'text'
 
 C_STREAM_IDS = ('1234', '5678')
@@ -185,7 +185,6 @@ while True:
 
             print("WORKER INFO received flush message ==> waiting for packages.")
             MCloud.mcloudpacketdenit(packet)
-            continue
         elif packet.packet_type() == 4:  # MCloudDone
             m_cloud_w.wait_for_finish(1, "processing")
 

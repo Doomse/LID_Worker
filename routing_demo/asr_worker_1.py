@@ -6,9 +6,9 @@ HOST = "i13srv53.ira.uka.de".encode('utf-8')
 PORT = 60019
 
 W_NAME = "LID_Worker".encode('utf-8')
-IN_FINGERPRINT = 'yy'.encode('utf-8')
+IN_FINGERPRINT = 'de'.encode('utf-8')
 IN_TYPE = 'audio'.encode('utf-8')
-OUT_FINGERPRINT = 'yy'.encode('utf-8')
+OUT_FINGERPRINT = 'de'.encode('utf-8')
 OUT_TYPE = 'text'.encode('utf-8')
 
 count = 0
@@ -40,7 +40,7 @@ def data_callback(i, sampleA):
     sample = np.asarray(sampleA)
     print('DEBUG', 'sample:', type(sample), sample.shape, sample.min(), sample.max() )
 
-    text = ['recieved frames on yy']
+    text = [f"recieved frames on { IN_FINGERPRINT.decode('utf-8') }"]
     global count
     m_cloud_w.send_packet_result_async(count, count+i, text, len(text))
     count += i
@@ -82,7 +82,6 @@ while True:
             m_cloud_w.send_flush()
             print("WORKER INFO received flush message ==> waiting for packages.")
             MCloud.mcloudpacketdenit(packet)
-            break
         elif packet.packet_type() == 4:  # MCloudDone
             print("WOKRER INFO received DONE message ==> waiting for clients.")
             m_cloud_w.wait_for_finish(1, "processing")
